@@ -1,0 +1,15 @@
+{
+	"name": "investing-dashboard",
+	"version": "0.0.0",
+	"license": "MIT",
+	"scripts": {
+		"start": "tsx index.ts"
+	},
+	"dependencies": {
+		"puppeteer": "^21.5.2"
+	},
+	"devDependencies": {
+		"tsx": "^4.6.2",
+		"typescript": "^5.0.3"
+	}
+}
