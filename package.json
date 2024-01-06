@@ -6,9 +6,11 @@
 		"start": "tsx index.ts"
 	},
 	"dependencies": {
+		"luxon": "^3.4.4",
 		"puppeteer": "^21.5.2"
 	},
 	"devDependencies": {
+		"@types/luxon": "^3.3.7",
 		"tsx": "^4.6.2",
 		"typescript": "^5.0.3"
 	}
