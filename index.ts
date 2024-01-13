@@ -14,7 +14,7 @@ function xpathSelector(p: string): string {
 }
 
 async function getElTextFromXpath(page: Page, xpath: string): Promise<string> {
-	const elHandle = await page.waitForSelector(xpathSelector(xpath), { timeout: 10000 })
+	const elHandle = await page.waitForSelector(xpathSelector(xpath))
 	if (elHandle === null) throw new Error('not found')
 	const text = await page.evaluate(el => el.textContent, elHandle)
 	await elHandle.dispose()
@@ -26,6 +26,7 @@ interface YahooFinanceData {
 	earningsDate: string
 	dividendAndYield: string
 	exDividendDate: string
+	prediction: number
 	weekGrowthPercentage: number
 }
 
@@ -33,7 +34,7 @@ async function getYahooFinanceData(
 	browser: Browser,
 	ticker: string,
 ): Promise<YahooFinanceData> {
-	ticker = ticker.replaceAll('.', '-')
+	ticker = ticker == 'BRK.B' ? ticker.replaceAll('.', '-') : ticker
 	const page = await browser.newPage()
 	await page.setJavaScriptEnabled(false)
 	await page.goto(`https://finance.yahoo.com/quote/${ticker}`)
@@ -65,6 +66,11 @@ async function getYahooFinanceData(
 		page,
 		'//*[@id="quote-summary"]/div[2]/table/tbody/tr[7]/td[2]',
 	)
+	const predictionText = await getElTextFromXpath(
+		page,
+		'//*[@id="quote-summary"]/div[2]/table/tbody/tr[8]/td[2]',
+	)
+	const prediction = getFloat(predictionText, ticker)
 
 	await page.goto(`https://finance.yahoo.com/quote/${ticker}/history`)
 	const lastTenDaysHistory = await page.evaluate(() => {
@@ -84,6 +90,7 @@ async function getYahooFinanceData(
 		earningsDate,
 		dividendAndYield,
 		exDividendDate,
+		prediction,
 		weekGrowthPercentage,
 	}
 }
@@ -114,10 +121,7 @@ async function getGurufocusPrediction(
 	return getFloat(predictionText.substring(1))
 }
 
-async function getZacksPrediction(
-	browser: Browser,
-	ticker: string,
-): Promise<number> {
+async function getZacksPrediction(browser: Browser, ticker: string): Promise<number> {
 	const page = await browser.newPage()
 	await page.setJavaScriptEnabled(false)
 	await page.goto(
@@ -163,22 +167,21 @@ async function getAlphaspreadPrediction(
 interface Summary {
 	yahooFinance: YahooFinanceData
 	predictions: {
-		gurufocus: number
 		zacks: number
 		alphaspread: number
+		yahoo: number
 	}
 }
 
 async function getSummary(browser: Browser, ticker: string): Promise<Summary> {
-	const [yahooFinance, gurufocus, zacks, alphaspread] = await Promise.all([
+	const [yahooFinance, zacks, alphaspread] = await Promise.all([
 		getYahooFinanceData(browser, ticker),
-		getGurufocusPrediction(browser, ticker),
 		getZacksPrediction(browser, ticker),
 		getAlphaspreadPrediction(browser, ticker),
 	])
 	return {
 		yahooFinance,
-		predictions: { gurufocus, zacks, alphaspread },
+		predictions: { zacks, alphaspread, yahoo: yahooFinance.prediction },
 	}
 }
 
@@ -209,17 +212,17 @@ async function processCategory(fd: number, category: string, tickers: string[]) 
 	for (const ticker in summaries) {
 		const summary = summaries[ticker]
 		const price = summary.yahooFinance.price
-		const gurufocusPercentage = growthPercentage(price, summary.predictions.gurufocus)
 		const zacksPercentage = growthPercentage(price, summary.predictions.zacks)
 		const alphaspreadPercentage = growthPercentage(price, summary.predictions.alphaspread)
+		const yahooPercentage = growthPercentage(price, summary.predictions.alphaspread)
 
 		const line = [
 			ticker,
 			price,
-			`${summary.predictions.gurufocus} (${Math.floor(gurufocusPercentage)}%)`,
 			`${summary.predictions.zacks} (${Math.floor(zacksPercentage)}%)`,
 			`${summary.predictions.alphaspread} (${Math.floor(alphaspreadPercentage)}%)`,
-			Math.floor((gurufocusPercentage + zacksPercentage + alphaspreadPercentage) / 3),
+			`${summary.predictions.yahoo} (${Math.floor(yahooPercentage)}%)`,
+			Math.floor((zacksPercentage + alphaspreadPercentage + yahooPercentage) / 3),
 			`${summary.yahooFinance.weekGrowthPercentage.toFixed(2)}%`,
 		].join('\t')
 
@@ -234,6 +237,8 @@ if (require.main === module) {
 	processCategory(fd, 'Safe', ['PG', 'JPM', 'TXN', 'AVGO', 'MCD', 'KO', 'PEP'])
 		.then(() => sleep(20))
 		.then(() => processCategory(fd, 'Safe No Dividends', ['AAPL', 'MSFT', 'ORCL', 'SONY', 'BRK.B', 'GOOG']))
+		.then(() => sleep(20))
+		.then(() => processCategory(fd, 'REIT', ['SBRA', 'OHI']))
 		.then(() => sleep(20))
 		.then(() => processCategory(fd, 'Watchlist', ['CSCO', 'JNJ', 'HPQ', 'SHOP', 'NET', 'MDB', 'QCOM', 'V', 'SNOW']))
 		.then(() => fs.closeSync(fd))
